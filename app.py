@@ -3,134 +3,180 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import random
 
-st.set_page_config(page_title="Smart Vehicle Service Bot", page_icon="🚗")
+st.set_page_config(page_title="AI Vehicle Service Assistant", page_icon="🚗")
 
-st.title("🚗 Smart Vehicle Service Assistant")
-st.write("Your interactive assistant for vehicle maintenance.")
+st.title("🚗 AI Vehicle Service Assistant")
+st.caption("Your intelligent vehicle health companion")
 
 # ---------------------------
-# Initialize chat memory
+# SESSION STATE INIT
 # ---------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "awaiting_service_check" not in st.session_state:
-    st.session_state.awaiting_service_check = False
+if "stage" not in st.session_state:
+    st.session_state.stage = "start"
+
+if "vehicle_data" not in st.session_state:
+    st.session_state.vehicle_data = {}
 
 # ---------------------------
-# Expanded FAQ Library
-# ---------------------------
-faq = {
-    "service due": "Most vehicles require service every 6 months or 5,000–10,000 km.",
-    "engine oil": "Engine oil should be changed every 5,000–10,000 km depending on vehicle type.",
-    "battery": "Car batteries usually last 3–5 years.",
-    "brake": "Brake pads typically last 30,000–70,000 km.",
-    "tyre pressure": "Check tyre pressure at least once a month.",
-    "insurance": "Vehicle insurance should be renewed yearly.",
-    "mileage low": "Low mileage can be due to dirty air filters, old oil, or incorrect tyre pressure.",
-    "overheating": "Engine overheating may be due to low coolant or radiator issues.",
-    "cost": "Basic vehicle service costs between ₹2000 – ₹6000.",
-    "skip service": "Skipping service may cause expensive engine damage."
-}
-
-maintenance_tips = [
-    "💡 Tip: Regular oil changes improve engine life.",
-    "💡 Tip: Maintain correct tyre pressure for better mileage.",
-    "💡 Tip: Clean air filters improve fuel efficiency.",
-    "💡 Tip: Check brake pads every 10,000 km.",
-    "💡 Tip: Wash your vehicle regularly to prevent rust."
-]
-
-# ---------------------------
-# Display Chat History
+# DISPLAY CHAT HISTORY
 # ---------------------------
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
 # ---------------------------
-# Chat Input
+# CHAT INPUT
 # ---------------------------
-if prompt := st.chat_input(placeholder="Ask about your vehicle..."):
+if prompt := st.chat_input("Type your message..."):
 
-    # Save user message
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    response = None
-    lower_prompt = prompt.lower()
+    response = ""
+    lower = prompt.lower()
 
     # ---------------------------
-    # Service Due Trigger
+    # START CONVERSATION
     # ---------------------------
-    if "check service" in lower_prompt:
-        response = "Sure! Please enter your last service date, last service km, and current km below."
-        st.session_state.awaiting_service_check = True
+    if st.session_state.stage == "start":
+        response = "Great! Let's check your vehicle health 🚗\n\nWhat type of vehicle do you have?\n\n1️⃣ Car\n2️⃣ Bike"
+        st.session_state.stage = "vehicle_type"
 
     # ---------------------------
-    # FAQ Matching
+    # VEHICLE TYPE
+    # ---------------------------
+    elif st.session_state.stage == "vehicle_type":
+        if "car" in lower:
+            st.session_state.vehicle_data["type"] = "Car"
+            response = "Got it 👍 When was your last service? (Enter date in YYYY-MM-DD format)"
+            st.session_state.stage = "last_service_date"
+
+        elif "bike" in lower:
+            st.session_state.vehicle_data["type"] = "Bike"
+            response = "Nice 🏍 When was your last service? (Enter date in YYYY-MM-DD format)"
+            st.session_state.stage = "last_service_date"
+        else:
+            response = "Please type 'Car' or 'Bike'."
+
+    # ---------------------------
+    # LAST SERVICE DATE
+    # ---------------------------
+    elif st.session_state.stage == "last_service_date":
+        try:
+            service_date = datetime.strptime(prompt, "%Y-%m-%d").date()
+            st.session_state.vehicle_data["last_service_date"] = service_date
+            response = "How many kilometers were recorded at last service?"
+            st.session_state.stage = "last_km"
+        except:
+            response = "Please enter date in YYYY-MM-DD format."
+
+    # ---------------------------
+    # LAST KM
+    # ---------------------------
+    elif st.session_state.stage == "last_km":
+        if prompt.isdigit():
+            st.session_state.vehicle_data["last_km"] = int(prompt)
+            response = "What is your current kilometer reading?"
+            st.session_state.stage = "current_km"
+        else:
+            response = "Please enter numbers only."
+
+    # ---------------------------
+    # CURRENT KM + CALCULATION
+    # ---------------------------
+    elif st.session_state.stage == "current_km":
+        if prompt.isdigit():
+
+            st.session_state.vehicle_data["current_km"] = int(prompt)
+
+            data = st.session_state.vehicle_data
+            months_passed = relativedelta(datetime.today().date(), data["last_service_date"]).months + \
+                            relativedelta(datetime.today().date(), data["last_service_date"]).years * 12
+
+            km_used = data["current_km"] - data["last_km"]
+
+            # Scoring Logic
+            score = 0
+            if months_passed >= 6:
+                score += 1
+            if km_used >= 5000:
+                score += 1
+
+            if score == 2:
+                health_status = "🚨 Service OVERDUE (High Risk)"
+            elif score == 1:
+                health_status = "⚠️ Service Due Soon (Medium Risk)"
+            else:
+                health_status = "✅ Vehicle is Healthy (Low Risk)"
+
+            tips = [
+                "🔧 Consider checking brake pads.",
+                "🛞 Maintain proper tyre pressure.",
+                "🛢 Change engine oil regularly.",
+                "🔋 Check battery condition before long trips."
+            ]
+
+            response = f"""
+### 📊 Vehicle Health Report
+
+**Vehicle Type:** {data['type']}  
+**Months Since Service:** {months_passed}  
+**KM Driven Since Service:** {km_used}  
+
+### 🏥 Status:
+{health_status}
+
+### 💡 Recommendation:
+{random.choice(tips)}
+
+Would you like maintenance cost estimation or tips?
+(Type: cost / tips / restart)
+"""
+            st.session_state.stage = "post_report"
+
+        else:
+            response = "Please enter numeric value."
+
+    # ---------------------------
+    # POST REPORT OPTIONS
+    # ---------------------------
+    elif st.session_state.stage == "post_report":
+
+        if "cost" in lower:
+            if st.session_state.vehicle_data["type"] == "Car":
+                response = "💰 Estimated Service Cost: ₹4000 – ₹8000"
+            else:
+                response = "💰 Estimated Service Cost: ₹1500 – ₹3000"
+
+        elif "tips" in lower:
+            response = """
+### 🔧 Maintenance Tips:
+- Check oil every 2 weeks
+- Clean air filters monthly
+- Inspect brakes every 10,000 km
+- Avoid aggressive driving
+"""
+
+        elif "restart" in lower:
+            st.session_state.stage = "start"
+            st.session_state.vehicle_data = {}
+            response = "Restarting service assistant... 🚗 Type anything to begin again."
+
+        else:
+            response = "Type 'cost', 'tips', or 'restart'."
+
+    # ---------------------------
+    # DEFAULT
     # ---------------------------
     else:
-        for keyword in faq:
-            if keyword in lower_prompt:
-                response = faq[keyword]
-                break
+        response = "Type something to start your vehicle health check 🚗"
 
-    if not response:
-        response = "I'm not sure about that. Can you ask about service, mileage, battery, brakes, cost, or engine oil?"
-
-    # Display bot response
     st.session_state.messages.append({"role": "assistant", "content": response})
+
     with st.chat_message("assistant"):
         st.markdown(response)
-
-    # Ask Follow-up Question Automatically
-    follow_up_questions = [
-        "Would you like to check if your vehicle service is due?",
-        "Do you want maintenance tips?",
-        "Would you like to know about service costs?",
-        "Do you want to check battery health tips?"
-    ]
-
-    follow_up = random.choice(follow_up_questions)
-    st.session_state.messages.append({"role": "assistant", "content": follow_up})
-    with st.chat_message("assistant"):
-        st.markdown(follow_up)
-
-# ---------------------------
-# Service Due Calculator Section
-# ---------------------------
-if st.session_state.awaiting_service_check:
-    st.subheader("📅 Service Due Calculator")
-
-    last_service_date = st.date_input("Last Service Date")
-    last_service_km = st.number_input("KM at Last Service", min_value=0)
-    current_km = st.number_input("Current KM Reading", min_value=0)
-
-    if st.button("Check Now"):
-        next_service_date = last_service_date + relativedelta(months=6)
-        km_difference = current_km - last_service_km
-
-        risk_score = 0
-
-        if datetime.today().date() >= next_service_date:
-            risk_score += 1
-        if km_difference >= 5000:
-            risk_score += 1
-
-        if risk_score == 2:
-            result = "🚨 HIGH RISK: Your vehicle service is OVERDUE!"
-        elif risk_score == 1:
-            result = "⚠️ MEDIUM RISK: Service is approaching soon."
-        else:
-            result = "✅ LOW RISK: Service not required yet."
-
-        st.success(result)
-
-        # Add maintenance tip
-        tip = random.choice(maintenance_tips)
-        st.info(tip)
-
-        st.session_state.awaiting_service_check = False
